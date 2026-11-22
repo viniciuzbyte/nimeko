@@ -75,16 +75,19 @@ class FsChrome(private val act: Activity) : WebChromeClient() {
 private const val EMBED_UA =
     "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36"
 
+private val AD_HOSTS = listOf("adgrowthpro", "doubleclick", "popads", "propeller", "adsterra", "exoclick", "clickadu", "juicyads")
+
+private fun baseDomain(h: String?) = h.orEmpty().split('.').takeLast(2).joinToString(".")
+
 /**
- * Embeds almost always bounce through a redirect chain onto a *different* host
- * before the actual player loads (e.g. provider.com/embed/x -> cdn-player.net/play/x).
- * The previous WebViewClient blocked any navigation whose host didn't match the
- * very first URL, which silently killed that redirect — the box stayed blank.
- * Fix: let normal http/https navigation through; only intercept non-web schemes
- * (intent://, market://, whatsapp://, …) so the WebView doesn't choke on them.
+ * Embeds bounce through redirects onto other hosts before the player loads, so cross-host
+ * navigation is allowed. What we block: ad hosts, any non-web scheme, and cross-site jumps
+ * triggered by a tap (the classic click-through ad that replaced the player with an error page).
+ * If a page finishes loading with no video/iframe/canvas at all (e.g. a parked domain), onDead()
+ * lets the caller move on to the next server.
  */
 @Composable
-fun EmbedView(url: String, onLoading: (Boolean) -> Unit = {}) {
+fun EmbedView(url: String, onLoading: (Boolean) -> Unit = {}, onDead: () -> Unit = {}) {
     val act = LocalContext.current as Activity
     val chrome = remember { FsChrome(act) }
     BackHandler(chrome.view != null) { chrome.onHideCustomView() }
@@ -97,19 +100,37 @@ fun EmbedView(url: String, onLoading: (Boolean) -> Unit = {}) {
                 settings.loadWithOverviewMode = true
                 settings.useWideViewPort = true
                 settings.mediaPlaybackRequiresUserGesture = false
+                settings.setSupportMultipleWindows(false)
+                settings.javaScriptCanOpenWindowsAutomatically = false
                 settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
                 settings.userAgentString = EMBED_UA
+                isLongClickable = false
+                setOnLongClickListener { true }
                 CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
                 webChromeClient = chrome
                 webViewClient = object : WebViewClient() {
                     override fun shouldOverrideUrlLoading(v: WebView, r: WebResourceRequest): Boolean {
-                        val scheme = r.url.scheme
-                        if (scheme == "http" || scheme == "https") return false
-                        return try {
-                            v.context.startActivity(Intent(Intent.ACTION_VIEW, r.url)); true
-                        } catch (e: Exception) { true }
+                        val u = r.url
+                        val host = u.host.orEmpty()
+                        if (u.scheme != "http" && u.scheme != "https") return true
+                        if (AD_HOSTS.any { host.contains(it) }) return true
+                        val first = Uri.parse(v.tag?.toString() ?: "").host
+                        if (r.hasGesture() && !r.isRedirect && baseDomain(host) != baseDomain(first)) return true
+                        return false
                     }
-                    override fun onPageFinished(v: WebView, u: String) { onLoading(false) }
+                    override fun onReceivedError(v: WebView, r: WebResourceRequest, e: android.webkit.WebResourceError) {
+                        if (r.isForMainFrame) onLoading(false)
+                    }
+                    override fun onPageFinished(v: WebView, u: String) {
+                        onLoading(false)
+                        val tag = v.tag
+                        v.postDelayed({
+                            if (v.tag != tag) return@postDelayed
+                            v.evaluateJavascript(
+                                "(function(){return document.querySelectorAll('video,iframe,canvas,object,embed').length===0&&(document.body?document.body.innerText.length:0)<800})()"
+                            ) { res -> if (res == "true" && v.tag == tag) onDead() }
+                        }, 6000)
+                    }
                 }
                 setBackgroundColor(android.graphics.Color.BLACK)
             }
@@ -128,7 +149,6 @@ fun EmbedView(url: String, onLoading: (Boolean) -> Unit = {}) {
 
 @Composable
 fun PlayerScreen(req: PlayReq, prefs: Prefs, onBack: () -> Unit, onNext: (String) -> Unit) {
-    val ctx = LocalContext.current
     val cs = MaterialTheme.colorScheme
     var retry by remember { mutableIntStateOf(0) }
     var sel by remember(req.epId) { mutableIntStateOf(0) }
@@ -144,7 +164,7 @@ fun PlayerScreen(req: PlayReq, prefs: Prefs, onBack: () -> Unit, onNext: (String
                     is Ui.Ok -> {
                         val embeds = u.v.servers.filter { !it.type.equals("direct", true) && !it.type.contains("download", true) }
                         if (embeds.isNotEmpty()) {
-                            EmbedView(embeds[sel.coerceIn(0, embeds.size - 1)].link) { embedLoading = it }
+                            EmbedView(embeds[sel.coerceIn(0, embeds.size - 1)].link, { embedLoading = it }, { if (sel < embeds.size - 1) sel++ })
                             val ov by animateFloatAsState(if (embedLoading) 1f else 0f, tween(300), label = "ov")
                             if (ov > 0.01f) {
                                 Box(Modifier.fillMaxSize().graphicsLayer { alpha = ov }.background(Color.Black), Alignment.Center) {
@@ -188,6 +208,7 @@ fun PlayerScreen(req: PlayReq, prefs: Prefs, onBack: () -> Unit, onNext: (String
                             Segmented(embeds.indices.map { it.toString() }, sel.toString(), embeds.map { "${it.name} ${it.quality}".trim() }, false) {
                                 sel = it.toInt()
                             }
+                            Text("Video tidak muncul? Coba server lain.", color = cs.onSurfaceVariant, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
                         }
                     }
                     item(key = "actions") {
@@ -198,10 +219,6 @@ fun PlayerScreen(req: PlayReq, prefs: Prefs, onBack: () -> Unit, onNext: (String
                                 shape = RoundedCornerShape(14.dp)
                             ) { Text("Next episode") }
                         }
-                        OutlinedButton(
-                            onClick = { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://animeinweb.com/anime/${s.movieId}?ep=${s.epId}"))) },
-                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp).appear(1), shape = RoundedCornerShape(14.dp)
-                        ) { Text("Open official page") }
                     }
                 }
             }

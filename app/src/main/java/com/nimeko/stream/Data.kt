@@ -5,6 +5,7 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.Uri
+import android.util.Base64
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
@@ -16,6 +17,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
+import org.json.JSONTokener
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
@@ -49,10 +51,19 @@ fun JSONObject.toMovie(idOverride: String? = null) = Movie(
     pick("status")
 )
 
+
+/** Detail responses sometimes nest the real fields one level down; return the object that actually has a title. */
+fun JSONObject.withTitle(): JSONObject {
+    val c = listOf(this) + listOf("movie", "detail", "anime", "data", "info").mapNotNull { optJSONObject(it) }
+    return c.firstOrNull { it.pick("title", "name", "judul") != null } ?: this
+}
+
 fun movieFromJson(o: JSONObject) = Movie(o.optString("id"), o.optString("title"), o.pick("img"), o.pick("score"), o.pick("ep"), o.pick("status"))
 
-object Api {
-    private const val BASE = "https://xyz-api.animein.net"
+private fun dec(s: String) = String(Base64.decode(s, Base64.DEFAULT)).trim()
+
+object ProviderA {
+    private val BASE = dec("aHR0cHM6Ly94eXotYXBpLmFuaW1laW4ubmV0")
     private val http = OkHttpClient.Builder().callTimeout(30, TimeUnit.SECONDS).build()
 
     private suspend fun get(path: String, q: Map<String, Any> = emptyMap()): JSONObject = withContext(Dispatchers.IO) {
@@ -94,15 +105,16 @@ object Api {
     suspend fun search(k: String) = get("/3/2/explore/movie", mapOf("page" to 0, "sort" to "latest", "keyword" to k)).optJSONArray("movie").objs().map { it.toMovie() }
 
     suspend fun detail(id: String): Detail {
-        val d = get("/3/2/movie/detail/${Uri.encode(id)}")
-        val g = d.optJSONArray("genre")
+        val root = get("/3/2/movie/detail/${Uri.encode(id)}")
+        val d = root.withTitle()
+        val g = d.optJSONArray("genre") ?: root.optJSONArray("genre")
         val genres = (0 until (g?.length() ?: 0)).mapNotNull {
             val x = g!!.opt(it)
             if (x is JSONObject) x.pick("name", "title") else x?.toString()
         }
-        val m = d.toMovie(id)
+        val m = d.toMovie(id).let { if (it.img == null) it.copy(img = root.toMovie(id).img) else it }
         val meta = listOfNotNull(m.status, d.pick("year", "release_year"), d.pick("type")).joinToString(" · ")
-        return Detail(m, d.pick("synopsis", "description", "sinopsis") ?: "", genres, meta)
+        return Detail(m, d.pick("synopsis", "description", "sinopsis") ?: root.pick("synopsis", "description", "sinopsis") ?: "", genres, meta)
     }
 
     suspend fun episodes(id: String, page: Int): List<Episode> =
@@ -127,8 +139,124 @@ object Api {
     }
 }
 
+object ProviderB {
+    private val BASE = dec("aHR0cHM6Ly9tYWluYXBwc3YxLm5hbmltZWlkLnh5ei8yLjEuMA==")
+    private val http = OkHttpClient.Builder().callTimeout(30, TimeUnit.SECONDS).build()
+    private const val P = "b:"
+    private fun raw(id: String) = id.removePrefix(P)
+
+    private suspend fun get(path: String, q: Map<String, Any> = emptyMap()): Any = withContext(Dispatchers.IO) {
+        val b = (BASE + path).toHttpUrl().newBuilder()
+        q.forEach { (k, v) -> b.addQueryParameter(k, v.toString()) }
+        val req = Request.Builder().url(b.build()).header("User-Agent", "Dart/3.5 (dart:io)").header("Accept", "application/json").build()
+        http.newCall(req).execute().use { r ->
+            val t = r.body?.string().orEmpty()
+            if (!r.isSuccessful) throw IOException("HTTP ${r.code}")
+            try { JSONTokener(t).nextValue() } catch (e: Exception) { null } ?: throw IOException("Invalid response")
+        }
+    }
+
+    private fun unwrap(x: Any): Any = if (x is JSONObject && x.opt("data") is JSONObject) x.getJSONObject("data") else x
+
+    private fun findArray(x: Any?, prefer: List<String>, depth: Int = 0): JSONArray? {
+        if (x is JSONArray) return if (x.length() == 0 || x.opt(0) is JSONObject) x else null
+        if (x !is JSONObject || depth > 3) return null
+        for (k in prefer) x.optJSONArray(k)?.let { if (it.length() == 0 || it.opt(0) is JSONObject) return it }
+        for (k in x.keys()) findArray(x.opt(k), prefer, depth + 1)?.takeIf { it.length() > 0 }?.let { return it }
+        return null
+    }
+
+    private fun JSONObject.toMovieB() = Movie(
+        P + (pick("id", "_id", "slug", "anime_id") ?: ""),
+        pick("title", "name", "judul", "anime_title") ?: "-",
+        pick("poster", "cover", "image", "thumbnail", "img", "thumb", "image_url"),
+        pick("score", "rating"),
+        pick("episode", "episodes", "total_episode", "latest_episode", "last_episode", "eps"),
+        pick("status")?.uppercase()
+    )
+
+    private fun list(x: Any) = findArray(unwrap(x), listOf("anime", "data", "results", "items", "list")).objs().map { it.toMovieB() }.filter { it.id != P }
+
+    suspend fun latest(page: Int) = list(get("/anime/latest", mapOf("page" to page + 1, "limit" to 20)))
+
+    suspend fun ongoing() = latest(0)
+
+    suspend fun search(k: String) = list(get("/anime/search-paginated", mapOf("q" to k, "page" to 1, "limit" to 20)))
+
+    suspend fun schedule(day: String): List<Movie> {
+        val en = mapOf("SENIN" to "monday", "SELASA" to "tuesday", "RABU" to "wednesday", "KAMIS" to "thursday", "JUMAT" to "friday", "SABTU" to "saturday", "MINGGU" to "sunday")
+        val keys = setOfNotNull(day.lowercase(), en[day.uppercase()])
+        val x = unwrap(get("/anime/schedule"))
+        if (x is JSONObject) {
+            for (k in x.keys()) if (k.lowercase() in keys) return findArray(x.opt(k), emptyList()).objs().map { it.toMovieB() }
+        }
+        val arr = findArray(x, listOf("schedule", "anime", "data")).objs()
+        val hasDay = arr.any { it.pick("day", "hari") != null }
+        return (if (hasDay) arr.filter { it.pick("day", "hari")?.lowercase() in keys } else arr).map { it.toMovieB() }
+    }
+
+    suspend fun detail(id: String): Detail {
+        val root = unwrap(get("/anime/${Uri.encode(raw(id))}")) as? JSONObject ?: throw IOException("Invalid response")
+        val d = root.withTitle()
+        val g = d.optJSONArray("genres") ?: d.optJSONArray("genre")
+        val genres = (0 until (g?.length() ?: 0)).mapNotNull {
+            val v = g!!.opt(it)
+            if (v is JSONObject) v.pick("name", "title") else v?.toString()
+        }
+        val m = d.toMovieB().copy(id = id)
+        val meta = listOfNotNull(m.status, d.pick("year", "release_year", "season"), d.pick("type")).joinToString(" · ")
+        return Detail(m, d.pick("synopsis", "description", "sinopsis", "deskripsi") ?: "", genres, meta)
+    }
+
+    suspend fun episodes(id: String, page: Int): List<Episode> {
+        if (page > 0) return emptyList()
+        val arr = findArray(unwrap(get("/episode/anime/${Uri.encode(raw(id))}")), listOf("episodes", "episode", "data")).objs()
+        val eps = arr.mapIndexed { i, e ->
+            val r = e.pick("number", "episode", "ep", "title", "name")
+            val n = r?.toDoubleOrNull()
+            Triple(n ?: (i + 1).toDouble(), Episode(P + (e.pick("id", "_id", "slug") ?: ""), when {
+                r == null -> "Episode ${i + 1}"
+                n != null -> "Episode $r"
+                else -> r
+            }), n != null)
+        }
+        return if (eps.isNotEmpty() && eps.all { it.third }) eps.sortedByDescending { it.first }.map { it.second } else eps.map { it.second }
+    }
+
+    suspend fun stream(id: String): Stream {
+        val root = unwrap(get("/episode/${Uri.encode(raw(id))}")) as? JSONObject ?: throw IOException("Episode not found.")
+        val iframe = Regex("src=[\"']([^\"']+)")
+        val sv = findArray(root, listOf("servers", "server", "streams", "stream", "sources", "embeds", "links", "mirrors")).objs().mapNotNull {
+            var l = it.pick("url", "link", "embed", "embed_url", "src", "iframe") ?: return@mapNotNull null
+            if (l.startsWith("<")) l = iframe.find(l)?.groupValues?.get(1) ?: return@mapNotNull null
+            if (l.startsWith("//")) l = "https:$l"
+            Server(it.pick("name", "server", "provider", "title") ?: "Server", it.pick("quality", "resolution", "res") ?: "", it.pick("type") ?: "embed", l, "")
+        }.sortedByDescending { s -> s.quality.filter { c -> c.isDigit() }.toIntOrNull() ?: 0 }
+        val next = root.optJSONObject("next")?.pick("id", "_id", "slug") ?: root.pick("next_id", "nextEpisodeId")
+        return Stream(P + (root.pick("anime_id", "animeId") ?: ""), id, sv, next?.let { P + raw(it) })
+    }
+}
+
+/** Facade: picks the active source for lists, and routes by id prefix for detail/episodes/stream. */
+object Api {
+    @Volatile var source = 1
+    private fun b(id: String) = id.startsWith("b:")
+
+    suspend fun latest(page: Int) = if (source == 2) ProviderB.latest(page) else ProviderA.latest(page)
+    suspend fun ongoing() = if (source == 2) ProviderB.ongoing() else ProviderA.ongoing()
+    suspend fun schedule(day: String) = if (source == 2) ProviderB.schedule(day) else ProviderA.schedule(day)
+    suspend fun search(k: String) = if (source == 2) ProviderB.search(k) else ProviderA.search(k)
+    suspend fun detail(id: String) = if (b(id)) ProviderB.detail(id) else ProviderA.detail(id)
+    suspend fun episodes(id: String, page: Int) = if (b(id)) ProviderB.episodes(id, page) else ProviderA.episodes(id, page)
+    suspend fun stream(id: String) = if (b(id)) ProviderB.stream(id) else ProviderA.stream(id)
+}
+
 class Prefs(c: Context) {
     private val p = c.getSharedPreferences("nimeko", Context.MODE_PRIVATE)
+
+    var source: Int
+        get() = p.getInt("source", 1)
+        set(v) { p.edit().putInt("source", v).apply() }
 
     var theme: String
         get() = p.getString("theme", "auto") ?: "auto"

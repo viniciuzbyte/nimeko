@@ -101,7 +101,7 @@ private val Tabs = listOf(
 @Composable
 fun Root(askNotif: () -> Unit) {
     val ctx = LocalContext.current
-    val prefs = remember { Prefs(ctx) }
+    val prefs = remember { Prefs(ctx).also { Api.source = it.source } }
     var theme by remember { mutableStateOf(prefs.theme) }
     val dark = when (theme) {
         "dark" -> true

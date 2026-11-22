@@ -245,6 +245,14 @@ fun SettingsScreen(prefs: Prefs, theme: String, onTheme: (String) -> Unit) {
         }
         Section("Tampilan")
         Column(Modifier.padding(top = 10.dp)) { Segmented(listOf("auto", "light", "dark"), theme, listOf("Otomatis", "Terang", "Gelap"), true, onTheme) }
+        Section("Sumber")
+        var src by remember { mutableStateOf(prefs.source.toString()) }
+        Column(Modifier.padding(top = 10.dp)) {
+            Segmented(listOf("1", "2"), src, listOf("Sumber 1", "Sumber 2"), true) {
+                src = it; prefs.source = it.toInt(); Api.source = it.toInt()
+                Toast.makeText(ctx, "Sumber diganti. Berlaku saat halaman dimuat ulang.", Toast.LENGTH_SHORT).show()
+            }
+        }
         Section("Pengaturan")
         Column(Modifier.padding(top = 10.dp)) {
             Card {
