@@ -13,10 +13,8 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -46,6 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -146,8 +145,9 @@ fun PlayerScreen(req: PlayReq, prefs: Prefs, onBack: () -> Unit, onNext: (String
                         val embeds = u.v.servers.filter { !it.type.equals("direct", true) && !it.type.contains("download", true) }
                         if (embeds.isNotEmpty()) {
                             EmbedView(embeds[sel.coerceIn(0, embeds.size - 1)].link) { embedLoading = it }
-                            AnimatedVisibility(embedLoading, enter = fadeIn(), exit = fadeOut(tween(300))) {
-                                Box(Modifier.fillMaxSize().background(Color.Black), Alignment.Center) {
+                            val ov by animateFloatAsState(if (embedLoading) 1f else 0f, tween(300), label = "ov")
+                            if (ov > 0.01f) {
+                                Box(Modifier.fillMaxSize().graphicsLayer { alpha = ov }.background(Color.Black), Alignment.Center) {
                                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                         CircularProgressIndicator(color = cs.primary)
                                         Text("Loading player…", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp))
