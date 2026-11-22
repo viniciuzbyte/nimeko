@@ -1,0 +1,30 @@
+name: Build APK
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.9
+      - run: gradle :app:assembleRelease -Prepo=${{ github.repository }} -Pver=${GITHUB_REF_NAME#v} -Pcode=${{ github.run_number }}
+      - env:
+          KS: ${{ secrets.KEYSTORE_B64 }}
+          KS_PASS: ${{ secrets.KEYSTORE_PASS }}
+        run: |
+          echo "$KS" | base64 -d > ks.jks
+          BT=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -1)
+          $BT/zipalign -p 4 app/build/outputs/apk/release/app-release-unsigned.apk aligned.apk
+          $BT/apksigner sign --ks ks.jks --ks-pass pass:$KS_PASS --key-pass pass:$KS_PASS --ks-key-alias nimeko --out Nimeko-${GITHUB_REF_NAME}.apk aligned.apk
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: Nimeko-*.apk
