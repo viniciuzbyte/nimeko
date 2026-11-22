@@ -9,3 +9,10 @@
 5. For updates, push v1.0.1 and so on. Installed apps check GitHub in the background and send a notification.
 
 Local build: open the folder in Android Studio (Koala or newer) and run the app module.
+
+
+## Signing key security
+
+Never commit `ks.jks`, a Base64 copy of the keystore, or signing passwords. Keep signing material only in your private CI secrets. The source archive intentionally excludes local signing files.
+
+If a keystore has already been published or shared, treat it as compromised. For a sideloaded app, plan a new application signing identity/package migration; existing installs generally cannot accept updates signed with a different key. If distribution uses Google Play App Signing, review the Play Console key-upgrade options.

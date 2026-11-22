@@ -53,38 +53,101 @@ fun movieFromJson(o: JSONObject) = Movie(o.optString("id"), o.optString("title")
 
 object Api {
     private const val BASE = "https://xyz-api.animein.net"
-    private val http = OkHttpClient.Builder().callTimeout(30, TimeUnit.SECONDS).build()
+    private val http = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(25, TimeUnit.SECONDS)
+        .callTimeout(35, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
+        .build()
+
+    private fun JSONObject.findArray(vararg keys: String): JSONArray? {
+        for (key in keys) optJSONArray(key)?.let { return it }
+        for (key in listOf("data", "result", "results", "payload")) {
+            val nested = optJSONObject(key) ?: continue
+            for (name in keys) nested.optJSONArray(name)?.let { return it }
+        }
+        return null
+    }
 
     private suspend fun get(path: String, q: Map<String, Any> = emptyMap()): JSONObject = withContext(Dispatchers.IO) {
         val b = (BASE + path).toHttpUrl().newBuilder()
-        (mapOf<String, Any>("id_user" to "0", "key_client" to "guest", "apk_ver" to "5.2.2") + q).forEach { (k, v) -> b.addQueryParameter(k, v.toString()) }
+        (mapOf<String, Any>("id_user" to "0", "key_client" to "guest", "apk_ver" to "5.2.2") + q)
+            .forEach { (k, v) -> b.addQueryParameter(k, v.toString()) }
+
         val req = Request.Builder().url(b.build())
-            .header("User-Agent", "okhttp/4.12.0")
+            .header("User-Agent", "Nimeko-Android/1.1 (OkHttp)")
             .header("apk_ver", "5.2.2")
             .header("Accept", "application/json")
             .build()
-        http.newCall(req).execute().use { r ->
-            val t = r.body?.string().orEmpty()
-            val j = try { JSONObject(t) } catch (e: Exception) { throw IOException("Invalid response (${r.code})") }
-            val bad = !r.isSuccessful || (j.has("error") && !j.isNull("error")) || (j.has("status") && j.optInt("status") != 200)
-            if (bad) throw IOException(j.optString("message").ifBlank { "HTTP ${r.code}" })
-            j.optJSONObject("data") ?: JSONObject()
+
+        http.newCall(req).execute().use { response ->
+            val body = response.body?.string().orEmpty()
+            val json = try {
+                JSONObject(body)
+            } catch (_: Exception) {
+                throw IOException("API returned invalid JSON (HTTP ${response.code}).")
+            }
+
+            val error = json.opt("error")
+            val hasError = when (error) {
+                null, JSONObject.NULL -> false
+                is Boolean -> error
+                is Number -> error.toInt() != 0
+                is String -> error.isNotBlank() && error != "false" && error != "0"
+                else -> true
+            }
+            val apiStatus = json.opt("status")
+            val statusFailed = when (apiStatus) {
+                is Number -> apiStatus.toInt() !in 200..299
+                is String -> apiStatus.toIntOrNull()?.let { it !in 200..299 } ?: false
+                else -> false
+            }
+
+            if (!response.isSuccessful || hasError || statusFailed) {
+                val message = json.pick("message", "msg", "error_description")
+                throw IOException(message ?: "API request failed (HTTP ${response.code}).")
+            }
+
+            val payload = json.optJSONObject("data")
+                ?: json.optJSONObject("result")
+                ?: json.optJSONObject("payload")
+                ?: json.takeIf { it.has("movie") || it.has("episode") || it.has("server") }
+                ?: throw IOException("HTTP ${response.code}, but the API response has no data object.")
+
+            payload
         }
     }
 
-    suspend fun latest(page: Int) = get("/3/2/explore/movie", mapOf("page" to page, "sort" to "latest")).optJSONArray("movie").objs().map { it.toMovie() }
+    suspend fun latest(page: Int): List<Movie> {
+        val json = get("/3/2/explore/movie", mapOf("page" to page, "sort" to "latest"))
+        return json.findArray("movie", "movies", "items", "results").objs()
+            .map { it.toMovie() }.filter { it.id.isNotBlank() }
+    }
 
-    suspend fun ongoing() = get("/3/2/home/hot", mapOf("page" to 0)).optJSONArray("movie").objs().filter { it.optString("status") == "ONGOING" }.map { it.toMovie() }
+    suspend fun ongoing(): List<Movie> {
+        val json = get("/3/2/home/hot", mapOf("page" to 0))
+        return json.findArray("movie", "movies", "items", "results").objs()
+            .map { it.toMovie() }
+            .filter { it.id.isNotBlank() && it.status.equals("ONGOING", ignoreCase = true) }
+    }
 
-    suspend fun schedule(day: String) = get("/3/2/schedule/data", mapOf("day" to day)).optJSONArray("movie").objs().map { it.toMovie() }
+    suspend fun schedule(day: String): List<Movie> {
+        val json = get("/3/2/schedule/data", mapOf("day" to day))
+        return json.findArray("movie", "movies", "items", "results").objs()
+            .map { it.toMovie() }.filter { it.id.isNotBlank() }
+    }
 
-    suspend fun search(k: String) = get("/3/2/explore/movie", mapOf("page" to 0, "sort" to "latest", "keyword" to k)).optJSONArray("movie").objs().map { it.toMovie() }
+    suspend fun search(k: String): List<Movie> {
+        val json = get("/3/2/explore/movie", mapOf("page" to 0, "sort" to "latest", "keyword" to k))
+        return json.findArray("movie", "movies", "items", "results").objs()
+            .map { it.toMovie() }.filter { it.id.isNotBlank() }
+    }
 
     suspend fun detail(id: String): Detail {
         val d = get("/3/2/movie/detail/${Uri.encode(id)}")
-        val g = d.optJSONArray("genre")
-        val genres = (0 until (g?.length() ?: 0)).mapNotNull {
-            val x = g!!.opt(it)
+        val g = d.findArray("genre", "genres")
+        val genres = (0 until (g?.length() ?: 0)).mapNotNull { i ->
+            val x = g?.opt(i)
             if (x is JSONObject) x.pick("name", "title") else x?.toString()
         }
         val m = d.toMovie(id)
@@ -92,25 +155,44 @@ object Api {
         return Detail(m, d.pick("synopsis", "description", "sinopsis") ?: "", genres, meta)
     }
 
-    suspend fun episodes(id: String, page: Int): List<Episode> =
-        get("/3/2/movie/episode/${Uri.encode(id)}", mapOf("page" to page)).optJSONArray("episode").objs().mapIndexed { i, e ->
+    suspend fun episodes(id: String, page: Int): List<Episode> {
+        val json = get("/3/2/movie/episode/${Uri.encode(id)}", mapOf("page" to page))
+        return json.findArray("episode", "episodes", "items", "results").objs().mapIndexedNotNull { i, e ->
+            val episodeId = e.pick("id", "episode_id") ?: return@mapIndexedNotNull null
             val raw = e.pick("title", "name", "episode", "number", "ep")
             val label = when {
                 raw == null -> "Episode ${page * 30 + i + 1}"
-                raw.all { c -> c.isDigit() } -> "Episode $raw"
+                raw.all { it.isDigit() } -> "Episode $raw"
                 else -> raw
             }
-            Episode(e.pick("id") ?: "", label)
+            Episode(episodeId, label)
         }
+    }
 
     suspend fun stream(id: String): Stream {
         val d = get("/3/2/episode/streamnew/${Uri.encode(id)}")
-        val e = d.optJSONObject("episode") ?: throw IOException("Episode not found.")
-        val sv = d.optJSONArray("server").objs()
-            .filter { it.optString("link").isNotBlank() }
-            .map { Server(it.pick("name") ?: "Server", it.pick("quality") ?: "", it.optString("type"), it.optString("link"), it.pick("key_file_size") ?: "") }
-            .sortedByDescending { s -> s.quality.filter { c -> c.isDigit() }.toIntOrNull() ?: 0 }
-        return Stream(e.pick("id_movie") ?: "", e.pick("id") ?: id, sv, d.optJSONObject("episode_next")?.pick("id"))
+        val e = d.optJSONObject("episode") ?: throw IOException("The API did not return episode details.")
+        val servers = d.findArray("server", "servers", "sources", "links").objs()
+            .mapNotNull { item ->
+                val link = item.pick("link", "url", "src") ?: return@mapNotNull null
+                if (!link.startsWith("https://") && !link.startsWith("http://")) return@mapNotNull null
+                Server(
+                    item.pick("name", "server", "label") ?: "Server",
+                    item.pick("quality", "resolution") ?: "",
+                    item.pick("type", "kind")?.lowercase() ?: "embed",
+                    link,
+                    item.pick("key_file_size", "size") ?: ""
+                )
+            }
+            .distinctBy { it.link }
+            .sortedByDescending { server -> server.quality.filter { it.isDigit() }.toIntOrNull() ?: 0 }
+
+        return Stream(
+            e.pick("id_movie", "movie_id") ?: "",
+            e.pick("id", "episode_id") ?: id,
+            servers,
+            d.optJSONObject("episode_next")?.pick("id", "episode_id")
+        )
     }
 }
 

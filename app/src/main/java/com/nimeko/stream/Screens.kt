@@ -24,6 +24,7 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridItemSpanScope
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -78,11 +79,11 @@ fun MovieGrid(list: List<Movie>, empty: String, onOpen: (String) -> Unit) {
     }
     LazyVerticalGrid(
         GridCells.Fixed(3), Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 100.dp),
+        contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 130.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        items(list) { m -> Poster(m) { onOpen(m.id) } }
+        itemsIndexed(list) { i, m -> Poster(m, Modifier.appear(i)) { onOpen(m.id) } }
     }
 }
 
@@ -103,11 +104,13 @@ fun HomeScreen(onOpen: (String) -> Unit) {
         val scope = rememberCoroutineScope()
         LazyVerticalGrid(
             GridCells.Fixed(3), Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(16.dp, 0.dp, 16.dp, 100.dp),
+            contentPadding = PaddingValues(16.dp, 0.dp, 16.dp, 130.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             item(span = Span3) { LargeTitle("Home") }
+            val feat = on.ifEmpty { first }.take(6)
+            if (feat.isNotEmpty()) item(span = Span3) { Banner(feat, onOpen) }
             if (on.isNotEmpty()) {
                 item(span = Span3) { Section("Ongoing") }
                 item(span = Span3) {
@@ -117,7 +120,7 @@ fun HomeScreen(onOpen: (String) -> Unit) {
                 }
             }
             item(span = Span3) { Section("Latest updates") }
-            items(items) { m -> Poster(m) { onOpen(m.id) } }
+            itemsIndexed(items) { i, m -> Poster(m, Modifier.appear(i)) { onOpen(m.id) } }
             item(span = Span3) {
                 TextButton(
                     onClick = {
@@ -187,14 +190,14 @@ fun LibraryScreen(prefs: Prefs, onOpen: (String) -> Unit) {
     val cs = MaterialTheme.colorScheme
     LazyVerticalGrid(
         GridCells.Fixed(3), Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp, 0.dp, 16.dp, 100.dp),
+        contentPadding = PaddingValues(16.dp, 0.dp, 16.dp, 130.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item(span = Span3) { LargeTitle("Library") }
         item(span = Span3) { Section("Favorites") }
         if (favs.isEmpty()) item(span = Span3) { Text("No favorites yet.", color = cs.onSurfaceVariant) }
-        items(favs) { m -> Poster(m) { onOpen(m.id) } }
+        itemsIndexed(favs) { i, m -> Poster(m, Modifier.appear(i)) { onOpen(m.id) } }
         item(span = Span3) { Section("History") }
         if (hist.isEmpty()) item(span = Span3) { Text("Nothing watched yet.", color = cs.onSurfaceVariant) }
         items(hist, span = { Span3() }) { h ->

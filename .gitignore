@@ -3,3 +3,5 @@ build/
 local.properties
 *.jks
 .idea/
+ks.txt
+ks.jks
