@@ -64,7 +64,6 @@ class FsChrome(private val act: Activity) : WebChromeClient() {
         view?.let { (act.window.decorView as FrameLayout).removeView(it) }
         view = null
         cb?.onCustomViewHidden()
-        cb = null
         act.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
     }
 }
@@ -82,10 +81,8 @@ fun EmbedView(url: String) {
                 settings.mediaPlaybackRequiresUserGesture = false
                 webChromeClient = chrome
                 webViewClient = object : WebViewClient() {
-                    override fun shouldOverrideUrlLoading(v: WebView, r: WebResourceRequest): Boolean {
-                        val scheme = r.url.scheme?.lowercase()
-                        return scheme != "https" && scheme != "http"
-                    }
+                    override fun shouldOverrideUrlLoading(v: WebView, r: WebResourceRequest): Boolean =
+                        r.url.host != Uri.parse(v.tag?.toString() ?: "").host
                 }
                 setBackgroundColor(android.graphics.Color.BLACK)
             }
@@ -114,25 +111,17 @@ fun PlayerScreen(req: PlayReq, prefs: Prefs, onBack: () -> Unit, onNext: (String
             Box(Modifier.fillMaxWidth().background(Color.Black).statusBarsPadding().aspectRatio(16f / 9f)) {
                 when (val u = ui) {
                     is Ui.Ok -> {
-                        val embeds = u.v.servers.filter { it.type.lowercase() !in setOf("direct", "download", "mp4") }
-                        if (embeds.isNotEmpty()) {
-                            EmbedView(embeds[sel.coerceIn(0, embeds.size - 1)].link)
-                        } else {
-                            Text(
-                                if (u.v.servers.isEmpty()) "No playable server was returned by the API."
-                                else "Only download servers are available.",
-                                color = Color.White,
-                                modifier = Modifier.align(Alignment.Center).padding(16.dp)
-                            )
-                        }
+                        val embeds = u.v.servers.filter { it.type == "semi" }
+                        if (embeds.isNotEmpty()) EmbedView(embeds[sel.coerceIn(0, embeds.size - 1)].link)
+                        else Text("No embed server available.", color = Color.White, modifier = Modifier.align(Alignment.Center))
                     }
                     is Ui.Loading -> Loading()
                     is Ui.Err -> {}
                 }
             }
             Async(ui, { retry++ }) { s ->
-                val embeds = s.servers.filter { it.type.lowercase() !in setOf("direct", "download", "mp4") }
-                val dls = s.servers.filter { it.type.lowercase() in setOf("direct", "download", "mp4") }
+                val embeds = s.servers.filter { it.type == "semi" }
+                val dls = s.servers.filter { it.type == "direct" }
                 LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 40.dp)) {
                     item {
                         Text(req.movie.title, fontSize = 20.sp, fontWeight = FontWeight.Bold)
