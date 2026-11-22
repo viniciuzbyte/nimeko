@@ -7,6 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -33,10 +34,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
@@ -108,7 +111,12 @@ fun HomeScreen(onOpen: (String) -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            item(span = Span3) { LargeTitle("Home") }
+            item(span = Span3) {
+                Column(Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 8.dp)) {
+                    Text("Selamat datang di Nimeko 👋", fontSize = 23.sp, fontWeight = FontWeight.Bold)
+                    Text("Temukan anime favoritmu dan lanjutkan petualangan.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, modifier = Modifier.padding(top = 5.dp))
+                }
+            }
             val feat = on.ifEmpty { first }.take(6)
             if (feat.isNotEmpty()) item(span = Span3) { Banner(feat, onOpen) }
             if (on.isNotEmpty()) {
@@ -212,29 +220,69 @@ fun LibraryScreen(prefs: Prefs, onOpen: (String) -> Unit) {
 fun SettingsScreen(prefs: Prefs, theme: String, onTheme: (String) -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
+    var name by remember { mutableStateOf(prefs.displayName) }
+    var email by remember { mutableStateOf(prefs.email) }
+    var showRegister by remember { mutableStateOf(false) }
+    var showEdit by remember { mutableStateOf(false) }
+    var draftName by remember { mutableStateOf(name) }
+    var draftEmail by remember { mutableStateOf(email) }
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-        LargeTitle("Settings")
-        Section("Appearance")
-        Column(Modifier.padding(top = 10.dp)) {
-            Segmented(listOf("auto", "light", "dark"), theme, listOf("Auto", "Light", "Dark"), true, onTheme)
+        LargeTitle("Profil")
+        Card {
+            Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                Box(Modifier.width(58.dp).height(58.dp).clip(CircleShape).background(Brush.linearGradient(listOf(MaterialTheme.colorScheme.primary, Color(0xFF7657E8)))), Alignment.Center) {
+                    Text(if (name.isNotBlank()) name.take(1).uppercase() else "G", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                }
+                Column(Modifier.weight(1f)) {
+                    Text(name.ifBlank { "Pengguna Guest" }, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                    Text(if (prefs.isRegistered) email else "Mode Guest · belum terdaftar", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                }
+                TextButton(onClick = { draftName = name; draftEmail = email; showEdit = prefs.isRegistered; if (!prefs.isRegistered) showRegister = true }) {
+                    Text(if (prefs.isRegistered) "Edit" else "Daftar")
+                }
+            }
+            if (prefs.isRegistered) Cell("Keluar dari akun", "›") { prefs.clearAccount(); name = ""; email = "" }
+            else Cell("Lanjutkan sebagai Guest", "Aktif") {}
         }
-        Section("About")
+        Section("Tampilan")
+        Column(Modifier.padding(top = 10.dp)) { Segmented(listOf("auto", "light", "dark"), theme, listOf("Otomatis", "Terang", "Gelap"), true, onTheme) }
+        Section("Pengaturan")
         Column(Modifier.padding(top = 10.dp)) {
             Card {
-                Cell("Version", BuildConfig.VERSION_NAME)
-                Cell("Check for updates", "›") {
+                Cell("Versi aplikasi", BuildConfig.VERSION_NAME)
+                Cell("Periksa pembaruan", "›") {
                     scope.launch {
                         val u = Updater.check()
-                        if (u == null) Toast.makeText(ctx, "You are on the latest version.", Toast.LENGTH_SHORT).show()
+                        if (u == null) Toast.makeText(ctx, "Aplikasi sudah versi terbaru.", Toast.LENGTH_SHORT).show()
                         else ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(u.url)))
                     }
                 }
-                Cell("Clear history", "›") {
-                    prefs.clearHist()
-                    Toast.makeText(ctx, "History cleared.", Toast.LENGTH_SHORT).show()
-                }
+                Cell("Hapus riwayat tontonan", "›") { prefs.clearHist(); Toast.makeText(ctx, "Riwayat dihapus.", Toast.LENGTH_SHORT).show() }
             }
         }
+    }
+    if (showRegister || showEdit) {
+        AlertDialog(
+            onDismissRequest = { showRegister = false; showEdit = false },
+            title = { Text(if (showEdit) "Edit profil" else "Buat akun Nimeko") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(draftName, { draftName = it }, label = { Text("Nama pengguna") }, singleLine = true)
+                    OutlinedTextField(draftEmail, { draftEmail = it }, label = { Text("Email") }, singleLine = true)
+                    Text("Pendaftaran lokal di perangkat ini. Fitur sinkronisasi akun memerlukan layanan akun resmi.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (draftName.isNotBlank() && draftEmail.contains("@")) {
+                        prefs.displayName = draftName.trim(); prefs.email = draftEmail.trim()
+                        name = prefs.displayName; email = prefs.email
+                        showRegister = false; showEdit = false
+                    } else Toast.makeText(ctx, "Isi nama dan email yang valid.", Toast.LENGTH_SHORT).show()
+                }) { Text(if (showEdit) "Simpan" else "Daftar") }
+            },
+            dismissButton = { TextButton(onClick = { showRegister = false; showEdit = false }) { Text("Batal") } }
+        )
     }
 }
 
@@ -299,7 +347,20 @@ fun DetailScreen(id: String, prefs: Prefs, onBack: () -> Unit, onPlay: (Movie, E
                     }
                 }
                 items(eps) { e ->
-                    Column(Modifier.padding(horizontal = 16.dp).fillMaxWidth().background(cs.surface).clickable { onPlay(d.movie, e) }) { Cell(e.label, "▶") }
+                    Row(
+                        Modifier.padding(horizontal = 16.dp, vertical = 5.dp).fillMaxWidth()
+                            .clip(RoundedCornerShape(18.dp)).background(cs.surface)
+                            .clickable { onPlay(d.movie, e) }.padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(13.dp)
+                    ) {
+                        AsyncImage(d.movie.img, d.movie.title, Modifier.width(76.dp).aspectRatio(1f).clip(RoundedCornerShape(12.dp)), contentScale = ContentScale.Crop)
+                        Column(Modifier.weight(1f)) {
+                            Text(e.label, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                            Text("Putar episode", fontSize = 12.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 3.dp))
+                        }
+                        Icon(Icons.Filled.PlayArrow, null, tint = cs.primary)
+                    }
                 }
                 if (more) {
                     item {

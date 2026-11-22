@@ -1,18 +1,15 @@
 package com.nimeko.stream
 
 import android.app.Activity
-import android.app.DownloadManager
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.net.Uri
-import android.os.Environment
 import android.view.View
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
-import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -111,7 +108,7 @@ fun PlayerScreen(req: PlayReq, prefs: Prefs, onBack: () -> Unit, onNext: (String
             Box(Modifier.fillMaxWidth().background(Color.Black).statusBarsPadding().aspectRatio(16f / 9f)) {
                 when (val u = ui) {
                     is Ui.Ok -> {
-                        val embeds = u.v.servers.filter { it.type == "semi" }
+                        val embeds = u.v.servers.filter { !it.type.equals("direct", true) && !it.type.contains("download", true) }
                         if (embeds.isNotEmpty()) EmbedView(embeds[sel.coerceIn(0, embeds.size - 1)].link)
                         else Text("No embed server available.", color = Color.White, modifier = Modifier.align(Alignment.Center))
                     }
@@ -120,8 +117,7 @@ fun PlayerScreen(req: PlayReq, prefs: Prefs, onBack: () -> Unit, onNext: (String
                 }
             }
             Async(ui, { retry++ }) { s ->
-                val embeds = s.servers.filter { it.type == "semi" }
-                val dls = s.servers.filter { it.type == "direct" }
+                val embeds = s.servers.filter { !it.type.equals("direct", true) && !it.type.contains("download", true) }
                 LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 40.dp)) {
                     item {
                         Text(req.movie.title, fontSize = 20.sp, fontWeight = FontWeight.Bold)
@@ -142,25 +138,6 @@ fun PlayerScreen(req: PlayReq, prefs: Prefs, onBack: () -> Unit, onNext: (String
                             onClick = { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://animeinweb.com/anime/${s.movieId}?ep=${s.epId}"))) },
                             modifier = Modifier.fillMaxWidth().padding(top = 8.dp), shape = RoundedCornerShape(14.dp)
                         ) { Text("Open official page") }
-                        if (dls.isNotEmpty()) Text("Download", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 20.dp, bottom = 8.dp))
-                    }
-                    if (dls.isNotEmpty()) {
-                        item {
-                            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(cs.surface)) {
-                                dls.forEach { d ->
-                                    Column(Modifier.clickable {
-                                        val name = "Nimeko-${req.movie.title}-${req.label}-${d.quality}.mp4".replace(Regex("[^A-Za-z0-9._-]"), "_")
-                                        val r = DownloadManager.Request(Uri.parse(d.link))
-                                            .addRequestHeader("User-Agent", "okhttp/4.12.0")
-                                            .addRequestHeader("Referer", "https://animeinweb.com/")
-                                            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                                            .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, name)
-                                        ctx.getSystemService(DownloadManager::class.java).enqueue(r)
-                                        Toast.makeText(ctx, "Download started", Toast.LENGTH_SHORT).show()
-                                    }) { Cell("${d.name} ${d.quality}".trim(), "${d.size} ↓") }
-                                }
-                            }
-                        }
                     }
                 }
             }

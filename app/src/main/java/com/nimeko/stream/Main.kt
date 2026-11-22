@@ -12,7 +12,6 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -91,11 +90,11 @@ import kotlinx.coroutines.launch
 private data class Tab(val icon: ImageVector, val label: String)
 
 private val Tabs = listOf(
-    Tab(Icons.Filled.Home, "Home"),
-    Tab(Icons.Filled.DateRange, "Schedule"),
-    Tab(Icons.Filled.Search, "Search"),
-    Tab(Icons.Filled.Favorite, "Library"),
-    Tab(Icons.Filled.SettingsIcon, "Settings")
+    Tab(Icons.Filled.Home, "Beranda"),
+    Tab(Icons.Filled.DateRange, "Anime"),
+    Tab(Icons.Filled.Search, "Cari"),
+    Tab(Icons.Filled.Favorite, "Favorit"),
+    Tab(Icons.Filled.SettingsIcon, "Profil")
 )
 
 @Composable

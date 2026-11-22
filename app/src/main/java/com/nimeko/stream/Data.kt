@@ -142,6 +142,18 @@ class Prefs(c: Context) {
         get() = p.getString("notified", "") ?: ""
         set(v) { p.edit().putString("notified", v).apply() }
 
+    var displayName: String
+        get() = p.getString("display_name", "") ?: ""
+        set(v) { p.edit().putString("display_name", v).apply() }
+
+    var email: String
+        get() = p.getString("email", "") ?: ""
+        set(v) { p.edit().putString("email", v).apply() }
+
+    val isRegistered: Boolean get() = email.isNotBlank() && displayName.isNotBlank()
+
+    fun clearAccount() { p.edit().remove("display_name").remove("email").apply() }
+
     fun favs(): List<Movie> = try {
         JSONArray(p.getString("fav", "[]")).objs().map { movieFromJson(it) }
     } catch (e: Exception) { emptyList() }
