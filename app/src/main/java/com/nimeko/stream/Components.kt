@@ -2,13 +2,9 @@ package com.nimeko.stream
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -160,7 +156,7 @@ fun Section(t: String) {
 
 @Composable
 fun Cell(title: String, trailing: String = "", onClick: (() -> Unit)? = null) {
-    val m = if (onClick != null) Modifier.clickable { onClick() } else Modifier
+    val m = if (onClick != null) Modifier.sfxClickable { onClick() } else Modifier
     Row(Modifier.fillMaxWidth().then(m).padding(16.dp, 14.dp), Arrangement.SpaceBetween, Alignment.CenterVertically) {
         Text(title, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, false))
         Text(trailing, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -182,7 +178,7 @@ fun Segmented(opts: List<String>, sel: String, labels: List<String> = opts, fill
             val bg by animateColorAsState(if (on) cs.surface else Color.Transparent, tween(240), label = "seg")
             val w = if (fill) Modifier.weight(1f) else Modifier
             Box(
-                w.clip(RoundedCornerShape(11.dp)).background(bg).clickable { onSel(o) }.padding(horizontal = 14.dp, vertical = 9.dp),
+                w.clip(RoundedCornerShape(11.dp)).background(bg).sfxClickable { onSel(o) }.padding(horizontal = 14.dp, vertical = 9.dp),
                 Alignment.Center
             ) {
                 Text(labels[i], fontSize = 13.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium)
@@ -197,7 +193,8 @@ fun Poster(m: Movie, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val src = remember { MutableInteractionSource() }
     val pressed by src.collectIsPressedAsState()
     val sc by animateFloatAsState(if (pressed) 0.94f else 1f, spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMedium), label = "press")
-    Column(modifier.graphicsLayer { scaleX = sc; scaleY = sc }.clickable(src, null, onClick = onClick)) {
+    val click = rememberSfxOnClick(onClick)
+    Column(modifier.graphicsLayer { scaleX = sc; scaleY = sc }.clickable(src, null, onClick = click)) {
         Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).softShadow(16.dp).clip(RoundedCornerShape(16.dp)).background(cs.surfaceVariant)) {
             AsyncImage(m.img, m.title, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.55f to Color.Transparent, 1f to Color(0xCC000000))))
@@ -236,7 +233,7 @@ fun Banner(list: List<Movie>, onOpen: (String) -> Unit) {
                 Modifier.fillMaxWidth().height(210.dp)
                     .graphicsLayer { val s = 1f - 0.07f * off; scaleX = s; scaleY = s; alpha = 1f - 0.4f * off }
                     .softShadow(26.dp).clip(RoundedCornerShape(26.dp)).background(cs.surfaceVariant)
-                    .clickable { onOpen(m.id) }
+                    .sfxClickable { onOpen(m.id) }
             ) {
                 AsyncImage(m.img, m.title, Modifier.fillMaxSize().graphicsLayer { translationX = off * 40f }, contentScale = ContentScale.Crop, alignment = Alignment.TopCenter)
                 Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.25f to Color.Transparent, 1f to Color(0xE6000000))))

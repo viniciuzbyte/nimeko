@@ -1,14 +1,18 @@
 package com.nimeko.stream
 
 import android.app.Activity
+import android.os.Build
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
@@ -36,8 +40,15 @@ private val Dark = darkColorScheme(
 )
 
 @Composable
-fun NimekoTheme(dark: Boolean, content: @Composable () -> Unit) {
+fun NimekoTheme(dark: Boolean, dynamicColor: Boolean = true, content: @Composable () -> Unit) {
     val view = LocalView.current
+    val context = LocalContext.current
+    val scheme = when {
+        dynamicColor && Build.VERSION.SDK_INT >= 31 ->
+            if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+        dark -> Dark
+        else -> Light
+    }
     SideEffect {
         val w = (view.context as Activity).window
         WindowCompat.getInsetsController(w, view).apply {
@@ -46,7 +57,7 @@ fun NimekoTheme(dark: Boolean, content: @Composable () -> Unit) {
         }
     }
     MaterialTheme(
-        colorScheme = if (dark) Dark else Light,
+        colorScheme = scheme,
         shapes = Shapes(small = RoundedCornerShape(10.dp), medium = RoundedCornerShape(14.dp), large = RoundedCornerShape(20.dp)),
         content = content
     )

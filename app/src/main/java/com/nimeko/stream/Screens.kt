@@ -4,7 +4,6 @@ import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
@@ -209,7 +208,7 @@ fun LibraryScreen(prefs: Prefs, onOpen: (String) -> Unit) {
         item(span = Span3) { Section("History") }
         if (hist.isEmpty()) item(span = Span3) { Text("Nothing watched yet.", color = cs.onSurfaceVariant) }
         items(hist, span = { Span3() }) { h ->
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(cs.surface).clickable { onOpen(h.movie.id) }) {
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(cs.surface).sfxClickable { onOpen(h.movie.id) }) {
                 Cell(h.movie.title, h.label)
             }
         }
@@ -350,7 +349,7 @@ fun DetailScreen(id: String, prefs: Prefs, onBack: () -> Unit, onPlay: (Movie, E
                     Row(
                         Modifier.padding(horizontal = 16.dp, vertical = 5.dp).fillMaxWidth()
                             .clip(RoundedCornerShape(18.dp)).background(cs.surface)
-                            .clickable { onPlay(d.movie, e) }.padding(10.dp),
+                            .sfxClickable { onPlay(d.movie, e) }.padding(10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(13.dp)
                     ) {
@@ -389,7 +388,7 @@ fun BackBtn(onBack: () -> Unit, dark: Boolean = false) {
     Box(
         Modifier.statusBarsPadding().padding(12.dp).clip(CircleShape)
             .background(if (dark) Color(0x8C000000) else MaterialTheme.colorScheme.surface.copy(alpha = 0.85f))
-            .clickable { onBack() }.padding(9.dp)
+            .sfxClickable { onBack() }.padding(9.dp)
     ) {
         Icon(Icons.Filled.ArrowBack, "Back", tint = if (dark) Color.White else MaterialTheme.colorScheme.onSurface)
     }
