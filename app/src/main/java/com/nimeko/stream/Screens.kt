@@ -56,6 +56,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -326,13 +327,15 @@ fun DetailScreen(id: String, prefs: Prefs, onBack: () -> Unit, onPlay: (Movie, E
                     Column(Modifier.padding(horizontal = 16.dp)) {
                         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             d.genres.forEach { g ->
-                                Text(g, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(cs.surfaceVariant).padding(11.dp, 5.dp))
+                                Text(g, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = cs.onPrimaryContainer, modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(cs.primaryContainer).padding(11.dp, 5.dp))
                             }
                         }
                         Row(Modifier.fillMaxWidth().padding(top = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             Button(
                                 onClick = { eps.firstOrNull()?.let { onPlay(d.movie, it) } },
-                                modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp)
+                                modifier = Modifier.weight(1f).clip(RoundedCornerShape(14.dp)).background(Brush.horizontalGradient(listOf(cs.primary, cs.secondary))),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = Color.Transparent, contentColor = Color.White)
                             ) {
                                 Icon(Icons.Filled.PlayArrow, null)
                                 Text("Play")
@@ -361,7 +364,10 @@ fun DetailScreen(id: String, prefs: Prefs, onBack: () -> Unit, onPlay: (Movie, E
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(13.dp)
                     ) {
-                        AsyncImage(d.movie.img, d.movie.title, Modifier.width(76.dp).aspectRatio(1f).clip(RoundedCornerShape(12.dp)), contentScale = ContentScale.Crop)
+                        Box(Modifier.width(76.dp).aspectRatio(1f).clip(RoundedCornerShape(12.dp)).background(Brush.linearGradient(listOf(cs.primary, cs.secondary))), Alignment.Center) {
+                            AsyncImage(d.movie.img, d.movie.title, Modifier.fillMaxSize().graphicsLayer { alpha = 0.55f }, contentScale = ContentScale.Crop)
+                            Text(e.label.filter { c -> c.isDigit() }.ifBlank { "▶" }, color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                        }
                         Column(Modifier.weight(1f)) {
                             Text(e.label, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                             Text("Putar episode", fontSize = 12.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 3.dp))

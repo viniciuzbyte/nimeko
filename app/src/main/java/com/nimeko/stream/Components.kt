@@ -156,7 +156,10 @@ fun LargeTitle(t: String) {
 
 @Composable
 fun Section(t: String) {
-    Text(t, fontSize = 21.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 14.dp))
+    Row(Modifier.padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(width = 5.dp, height = 22.dp).clip(RoundedCornerShape(3.dp)).background(Brush.verticalGradient(listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.secondary))))
+        Text(t, fontSize = 21.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 10.dp))
+    }
 }
 
 @Composable
@@ -180,13 +183,13 @@ fun Segmented(opts: List<String>, sel: String, labels: List<String> = opts, fill
     Row(base.clip(RoundedCornerShape(14.dp)).background(cs.surfaceVariant).padding(3.dp)) {
         opts.forEachIndexed { i, o ->
             val on = o == sel
-            val bg by animateColorAsState(if (on) cs.surface else Color.Transparent, tween(240), label = "seg")
+            val bg by animateColorAsState(if (on) cs.primaryContainer else Color.Transparent, tween(240), label = "seg")
             val w = if (fill) Modifier.weight(1f) else Modifier
             Box(
                 w.clip(RoundedCornerShape(11.dp)).background(bg).sfxClickable { onSel(o) }.padding(horizontal = 14.dp, vertical = 9.dp),
                 Alignment.Center
             ) {
-                Text(labels[i], fontSize = 13.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium)
+                Text(labels[i], fontSize = 13.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium, color = if (on) cs.onPrimaryContainer else cs.onSurfaceVariant)
             }
         }
     }
@@ -205,7 +208,7 @@ fun Poster(m: Movie, modifier: Modifier = Modifier, onClick: () -> Unit) {
             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0.55f to Color.Transparent, 1f to Color(0xCC000000))))
             if (m.status == "ONGOING") {
                 Text("NEW", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold,
-                    modifier = Modifier.align(Alignment.TopStart).padding(6.dp).clip(RoundedCornerShape(9.dp)).background(cs.primary).padding(horizontal = 7.dp, vertical = 3.dp))
+                    modifier = Modifier.align(Alignment.TopStart).padding(6.dp).clip(RoundedCornerShape(9.dp)).background(Brush.horizontalGradient(listOf(cs.primary, cs.secondary))).padding(horizontal = 7.dp, vertical = 3.dp))
             }
             if ((m.score?.toFloatOrNull() ?: 0f) > 0f) {
                 Text("★ ${m.score}", color = Color(0xFFFFD60A), fontSize = 11.sp, fontWeight = FontWeight.Bold,

@@ -34,6 +34,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.PlayerView
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -127,7 +133,7 @@ fun EmbedView(url: String, onLoading: (Boolean) -> Unit = {}, onDead: () -> Unit
                         v.postDelayed({
                             if (v.tag != tag) return@postDelayed
                             v.evaluateJavascript(
-                                "(function(){return document.querySelectorAll('video,iframe,canvas,object,embed').length===0&&(document.body?document.body.innerText.length:0)<800})()"
+                                "(function(){return (document.querySelectorAll('video,iframe,canvas,object,embed').length===0&&(document.body?document.body.innerText.length:0)<800)||!!document.querySelector('input[type=password]')})()"
                             ) { res -> if (res == "true" && v.tag == tag) onDead() }
                         }, 6000)
                     }
@@ -147,6 +153,35 @@ fun EmbedView(url: String, onLoading: (Boolean) -> Unit = {}, onDead: () -> Unit
     )
 }
 
+
+/** Real streams first: direct video links (mp4/m3u8) play natively; embeds come after as fallback. */
+fun List<Server>.playable(): List<Server> {
+    val ok = filter { !it.type.contains("download", true) && it.link.startsWith("http") }
+    val direct = ok.filter { it.type.equals("direct", true) }
+    return direct + (ok - direct.toSet())
+}
+
+@Composable
+fun DirectView(url: String, onLoading: (Boolean) -> Unit, onDead: () -> Unit) {
+    val ctx = LocalContext.current
+    val player = remember(url) {
+        ExoPlayer.Builder(ctx).build().apply { setMediaItem(MediaItem.fromUri(url)); prepare(); playWhenReady = true }
+    }
+    DisposableEffect(player) {
+        val l = object : Player.Listener {
+            override fun onPlaybackStateChanged(state: Int) { onLoading(state == Player.STATE_BUFFERING || state == Player.STATE_IDLE) }
+            override fun onPlayerError(error: PlaybackException) { onDead() }
+        }
+        player.addListener(l)
+        onDispose { player.removeListener(l); player.release() }
+    }
+    AndroidView(
+        factory = { c -> PlayerView(c).apply { useController = true; setBackgroundColor(android.graphics.Color.BLACK) } },
+        update = { it.player = player },
+        modifier = Modifier.fillMaxSize()
+    )
+}
+
 @Composable
 fun PlayerScreen(req: PlayReq, prefs: Prefs, onBack: () -> Unit, onNext: (String) -> Unit) {
     val cs = MaterialTheme.colorScheme
@@ -162,9 +197,12 @@ fun PlayerScreen(req: PlayReq, prefs: Prefs, onBack: () -> Unit, onNext: (String
             Box(Modifier.fillMaxWidth().background(Color.Black).statusBarsPadding().aspectRatio(16f / 9f)) {
                 when (val u = ui) {
                     is Ui.Ok -> {
-                        val embeds = u.v.servers.filter { !it.type.equals("direct", true) && !it.type.contains("download", true) }
+                        val embeds = u.v.servers.playable()
                         if (embeds.isNotEmpty()) {
-                            EmbedView(embeds[sel.coerceIn(0, embeds.size - 1)].link, { embedLoading = it }, { if (sel < embeds.size - 1) sel++ })
+                            val cur = embeds[sel.coerceIn(0, embeds.size - 1)]
+                            val dead = { if (sel < embeds.size - 1) sel++ }
+                            if (cur.type.equals("direct", true)) DirectView(cur.link, { embedLoading = it }, dead)
+                            else EmbedView(cur.link, { embedLoading = it }, dead)
                             val ov by animateFloatAsState(if (embedLoading) 1f else 0f, tween(300), label = "ov")
                             if (ov > 0.01f) {
                                 Box(Modifier.fillMaxSize().graphicsLayer { alpha = ov }.background(Color.Black), Alignment.Center) {
@@ -195,7 +233,7 @@ fun PlayerScreen(req: PlayReq, prefs: Prefs, onBack: () -> Unit, onNext: (String
                 }
             }
             Async(ui, { retry++ }) { s ->
-                val embeds = s.servers.filter { !it.type.equals("direct", true) && !it.type.contains("download", true) }
+                val embeds = s.servers.playable()
                 LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 14.dp, 16.dp, 40.dp)) {
                     item(key = "title") {
                         Text(req.movie.title, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.appear())
